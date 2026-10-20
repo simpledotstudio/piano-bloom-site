@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kinetic Strings & Drums</title>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --panel: #141821;
+    --accent: #38bdf8;
+    --gold: #f59e0b;
+    --rose: #f43f5e;
+    --emerald: #10b981;
+    --violet: #a855f7;
+    --text: #e2e8f0;
+    --muted: #64748b;
+  }
+
+  * {
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Minimal Floating Header */
+  #hud {
+    position: absolute;
+    top: 16px;
+    left: 20px;
+    right: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .hud-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: auto;
+    background: rgba(20, 24, 33, 0.78);
+    backdrop-filter: blur(8px);
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  button {
+    background: transparent;
+    color: var(--text);
+    border: none;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  button.active {
+    background: var(--accent);
+    color: #000;
+    font-weight: 600;
+  }
+
+  button.loop-btn.active {
+    background: var(--violet);
+    color: #fff;
+  }
+
+  button.replay-btn {
+    background: rgba(245, 158, 11, 0.18);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    font-weight: 600;
+  }
+
+  button.replay-btn:hover:not(:disabled),
+  button.replay-btn.playing {
+    background: var(--gold);
+    color: #000;
+  }
+
+  button.export-btn {
+    background: rgba(16, 185, 129, 0.18);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    font-weight: 600;
+  }
+
+  button.export-btn:hover:not(:disabled) {
+    background: var(--emerald);
+    color: #000;
+  }
+
+  /* Speed Slider Control */
+  .speed-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    font-size: 11px;
+    color: var(--muted);
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .speed-control span {
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 32px;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 72px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--gold);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+  }
+
+  input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--muted);
+    padding: 4px 6px;
+  }
+
+  /* Main Interactive Stage */
+  #stage-container {
+    flex: 1;
+    position: relative;
+    width: 100%;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Bottom Sheet Music Bar */
+  #sheet-container {
+    height: 170px;
+    background: var(--panel);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    position: relative;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.4);
+    cursor: crosshair;
+  }
+
+  #sheet-label {
+    position: absolute;
+    top: 8px;
+    left: 16px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="hud-group">
+    <span class="hint">Swipe strings • Click drums • Click sheet to add/delete notes</span>
+  </div>
+  <div class="hud-group">
+    <button id="emitter-btn" class="active">Auto-Orbs: ON</button>
+    <button id="add-shape-btn">+ Pluck Shape</button>
+    <button id="replay-btn" class="replay-btn" disabled>▶ Replay</button>
+    <button id="loop-btn" class="loop-btn">↻ Loop: OFF</button>
+    <div class="speed-control" title="Replay Speed (0.5x to 2.0x)">
+      <label for="speed-slider">Speed</label>
+      <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+      <span id="speed-val">1.0x</span>
+    </div>
+    <button id="export-midi-btn" class="export-btn" disabled>Export MIDI (0)</button>
+    <button id="clear-btn">Clear Score</button>
+  </div>
+</div>
+
+<div id="stage-container">
+  <canvas id="stage"></canvas>
+</div>
+
+<div id="sheet-container">
+  <div id="sheet-label">Live Sheet Transcription (Treble & Percussion)</div>
+  <canvas id="sheet"></canvas>
+</div>
+
+<script>
+/**
+ * WEB AUDIO SYNTHESIZER
+ */
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+  }
+
+  init() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  pluck(freq, velocity = 0.8) {
+    this.init();
+    const now = this.ctx.currentTime;
+    const sampleRate = this.ctx.sampleRate;
+    const period = Math.round(sampleRate / freq);
+    const duration = 2.2;
+    const buffer = this.ctx.createBuffer(1, sampleRate * duration, sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < period; i++) {
+      data[i] = (Math.random() * 2 - 1) * velocity;
+    }
+
+    const decay = 0.994;
+    for (let i = period; i < data.length; i++) {
+      data[i] = (data[i - period] + data[i - period + 1]) * 0.5 * decay;
+    }
+
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2400, now);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.6, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+    source.start(now);
+  }
+
+  playDrum(type) {
+    this.init();
+    const now = this.ctx.currentTime;
+
+    if (type === 'kick') {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(35, now + 0.12);
+      gain.gain.setValueAtTime(0.9, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } else if (type === 'snare') {
+      const osc = this.ctx.createOscillator();
+      const oscGain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(180, now);
+      oscGain.gain.setValueAtTime(0.4, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+      osc.connect(oscGain);
+      oscGain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.1);
+
+      const bufferSize = this.ctx.sampleRate * 0.2;
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(800, now);
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.5, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(this.ctx.destination);
+      noise.start(now);
+    } else if (type === 'hihat') {
+      const bufferSize = this.ctx.sampleRate * 0.08;
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
+
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(6000, now);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.07);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+      noise.start(now);
+    } else if (type === 'tom') {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.frequency.setValueAtTime(210, now);
+      osc.frequency.exponentialRampToValueAtTime(85, now + 0.22);
+      gain.gain.setValueAtTime(0.7, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    }
+  }
+}
+
+const audio = new SoundEngine();
+
+/**
+ * STANDARD MIDI FILE (.MID) ENCODER
+ */
+function encodeVLQ(value) {
+  let buffer = value & 0x7F;
+  const bytes = [];
+  while ((value >>= 7) > 0) {
+    buffer <<= 8;
+    buffer |= ((value & 0x7F) | 0x80);
+  }
+  while (true) {
+    bytes.push(buffer & 0xFF);
+    if (buffer & 0x80) buffer >>= 8;
+    else break;
+  }
+  return bytes;
+}
+
+function buildMidiFile(recordedEvents, speedMultiplier = 1.0) {
+  const ticksPerMs = (480 / 500) * speedMultiplier;
+  const startTime = recordedEvents[0].time;
+  const midiEvents = [];
+
+  for (const ev of recordedEvents) {
+    const startTick = Math.max(0, Math.round((ev.time - startTime) * ticksPerMs));
+    const durationTicks = ev.isDrum ? 120 : 360;
+    const channel = ev.isDrum ? 9 : 0;
+
+    midiEvents.push({ tick: startTick, bytes: [0x90 | channel, ev.midi, ev.velocity] });
+    midiEvents.push({ tick: startTick + durationTicks, bytes: [0x80 | channel, ev.midi, 0] });
+  }
+
+  midiEvents.sort((a, b) => a.tick - b.tick);
+
+  const trackBytes = [];
+  trackBytes.push(0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20);
+  trackBytes.push(0x00, 0xC0, 25);
+
+  let lastTick = 0;
+  for (const ev of midiEvents) {
+    const delta = Math.max(0, ev.tick - lastTick);
+    lastTick = ev.tick;
+    trackBytes.push(...encodeVLQ(delta), ...ev.bytes);
+  }
+
+  trackBytes.push(0x00, 0xFF, 0x2F, 0x00);
+
+  const trkLen = trackBytes.length;
+  const fileBytes = new Uint8Array([
+    0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
+    0x4D, 0x54, 0x72, 0x6B, (trkLen >> 24) & 0xFF, (trkLen >> 16) & 0xFF, (trkLen >> 8) & 0xFF, trkLen & 0xFF,
+    ...trackBytes
+  ]);
+
+  return new Blob([fileBytes], { type: 'audio/midi' });
+}
+
+/**
+ * STAGE & SHEET SETUP
+ */
+const stageCanvas = document.getElementById('stage');
+const ctx = stageCanvas.getContext('2d');
+const sheetCanvas = document.getElementById('sheet');
+const sctx = sheetCanvas.getContext('2d');
+
+const exportMidiBtn = document.getElementById('export-midi-btn');
+const replayBtn = document.getElementById('replay-btn');
+const loopBtn = document.getElementById('loop-btn');
+const speedSlider = document.getElementById('speed-slider');
+const speedVal = document.getElementById('speed-val');
+const sheetLabel = document.getElementById('sheet-label');
+
+let W, H, SW, SH;
+
+const STRING_DEFS = [
+  { name: 'E4', midi: 64, freq: 329.63, step: 0,   color: '#38bdf8' },
+  { name: 'B3', midi: 59, freq: 246.94, step: -3,  color: '#60a5fa' },
+  { name: 'G3', midi: 55, freq: 196.00, step: -5,  color: '#818cf8' },
+  { name: 'D3', midi: 50, freq: 146.83, step: -8,  color: '#a78bfa' },
+  { name: 'A2', midi: 45, freq: 110.00, step: -11, color: '#c084fc' },
+  { name: 'E2', midi: 40, freq: 82.41,  step: -14, color: '#e879f9' }
+];
+
+const SHAPE_NOTES = [
+  { name: 'E5', midi: 76, freq: 659.25, step: 7, color: '#10b981', sides: 3 },
+  { name: 'C5', midi: 72, freq: 523.25, step: 5, color: '#f59e0b', sides: 4 },
+  { name: 'A4', midi: 69, freq: 440.00, step: 3, color: '#f43f5e', sides: 5 },
+  { name: 'G4', midi: 67, freq: 392.00, step: 2, color: '#38bdf8', sides: 6 }
+];
+
+const DRUM_DEFS = [
+  { name: 'Hi-Hat', midi: 42, type: 'hihat', step: 9,  color: '#fbbf24', symbol: 'x' },
+  { name: 'Tom',    midi: 47, type: 'tom',   step: 5,  color: '#34d399', symbol: 'o' },
+  { name: 'Snare',  midi: 38, type: 'snare', step: 3,  color: '#f87171', symbol: 'o' },
+  { name: 'Kick',   midi: 36, type: 'kick',  step: -1, color: '#c084fc', symbol: 'o' }
+];
+
+let guitarStrings = [];
+let drums = [];
+let shapes = [];
+let movers = [];
+let ripples = [];
+let sheetNotes = [];
+let recordedEvents = [];
+
+let isReplaying = false;
+let isLooping = false;
+let playbackSpeed = 1.0;
+let replayVirtualElapsed = 0;
+let lastFrameTime = performance.now();
+let firstRecordedTime = 0;
+let lastRecordedTime = 0;
+
+function updateButtons() {
+  const count = recordedEvents.length;
+  exportMidiBtn.textContent = `Export MIDI (${count})`;
+  exportMidiBtn.disabled = count === 0;
+  replayBtn.disabled = count === 0;
+  if (!isReplaying) {
+    replayBtn.textContent = '▶ Replay';
+    replayBtn.classList.remove('playing');
+  }
+}
+
+function updateSheetLabel() {
+  if (isReplaying) {
+    sheetLabel.textContent = `Replaying Score (${playbackSpeed.toFixed(1)}x${isLooping ? ' • Looping' : ''}) • Click staff to add/delete notes`;
+  } else {
+    sheetLabel.textContent = `Live Sheet Transcription (${recordedEvents.length} notes) • Click staff to add/delete notes`;
+  }
+}
+
+function resize() {
+  W = stageCanvas.width = stageCanvas.parentElement.clientWidth;
+  H = stageCanvas.height = stageCanvas.parentElement.clientHeight;
+  SW = sheetCanvas.width = sheetCanvas.parentElement.clientWidth;
+  SH = sheetCanvas.height = sheetCanvas.parentElement.clientHeight;
+  buildLayout();
+}
+
+function buildLayout() {
+  const stringTop = H * 0.16;
+  const stringSpacing = (H * 0.68) / (STRING_DEFS.length - 1);
+  guitarStrings = STRING_DEFS.map((def, i) => ({
+    ...def,
+    x1: W * 0.06,
+    x2: W * 0.62,
+    y: stringTop + i * stringSpacing,
+    amp: 0
+  }));
+
+  const drumCenterX = W * 0.82;
+  const drumCenterY = H * 0.52;
+  const positions = [
+    { dx: -65, dy: -85, r: 38 },
+    { dx: 55,  dy: -75, r: 44 },
+    { dx: -55, dy: 35,  r: 50 },
+    { dx: 45,  dy: 55,  r: 62 }
+  ];
+
+  drums = DRUM_DEFS.map((def, i) => ({
+    ...def,
+    x: drumCenterX + positions[i].dx,
+    y: drumCenterY + positions[i].dy,
+    r: positions[i].r,
+    scale: 1
+  }));
+
+  if (shapes.length === 0) {
+    shapes = SHAPE_NOTES.map((def, i) => ({
+      ...def,
+      x: W * (0.22 + i * 0.11),
+      y: H * (0.28 + (i % 2) * 0.35),
+      r: 26,
+      angle: 0,
+      pulse: 0
+    }));
+  }
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+/**
+ * RECORDING & DISPLAY HELPERS
+ */
+function recordAndDisplayNote(meta) {
+  const now = performance.now();
+  sheetNotes.push({ ...meta, x: SW - 60, highlight: 1.0, born: now });
+  if (sheetNotes.length > 60) sheetNotes.shift();
+
+  if (!isReplaying) {
+    recordedEvents.push({ ...meta, time: now, playedInReplay: false, highlight: 0 });
+    updateButtons();
+    updateSheetLabel();
+  }
+}
+
+function triggerString(s, xPos, fromReplay = false) {
+  s.amp = 22;
+  audio.pluck(s.freq);
+  ripples.push({ x: xPos ?? (s.x1 + s.x2) / 2, y: s.y, r: 4, maxR: 45, color: s.color, alpha: 0.9 });
+
+  if (!fromReplay) {
+    recordAndDisplayNote({
+      kind: 'string', label: s.name, midi: s.midi, freq: s.freq, step: s.step,
+      color: s.color, isDrum: false, symbol: 'o', velocity: 95
+    });
+  }
+}
+
+function triggerShape(sh, fromReplay = false) {
+  sh.pulse = 1;
+  audio.pluck(sh.freq, 0.95);
+  ripples.push({ x: sh.x, y: sh.y, r: sh.r, maxR: sh.r + 55, color: sh.color, alpha: 1 });
+
+  if (!fromReplay) {
+    recordAndDisplayNote({
+      kind: 'shape', label: sh.name, midi: sh.midi, freq: sh.freq, step: sh.step,
+      color: sh.color, isDrum: false, symbol: 'o', velocity: 110
+    });
+  }
+}
+
+function triggerDrum(d, fromReplay = false) {
+  d.scale = 1.25;
+  audio.playDrum(d.type);
+  ripples.push({ x: d.x, y: d.y, r: d.r * 0.8, maxR: d.r + 45, color: d.color, alpha: 0.9 });
+
+  if (!fromReplay) {
+    recordAndDisplayNote({
+      kind: 'drum', drumType: d.type, label: d.name, midi: d.midi, step: d.step,
+      color: d.color, isDrum: true, symbol: d.symbol, velocity: 105
+    });
+  }
+}
+
+/**
+ * INTERACTIVE SHEET MUSIC CLICK HANDLER (ADD / DELETE NOTES)
+ */
+sheetCanvas.addEventListener('pointerdown', (e) => {
+  const rect = sheetCanvas.getBoundingClientRect();
+  const clickX = e.clientX - rect.left;
+  const clickY = e.clientY - rect.top;
+
+  const lineGap = 12;
+  const bottomLineY = SH * 0.68;
+  const stepGap = lineGap / 2;
+
+  // 1. Check if clicking an existing note to DELETE it
+  const playheadX = isReplaying ? 160 : -9999;
+  const pxPerMs = 0.16;
+
+  let clickedEventIndex = -1;
+  let minDistance = 22;
+
+  for (let i = 0; i < recordedEvents.length; i++) {
+    const ev = recordedEvents[i];
+    let noteScreenX;
+    if (isReplaying) {
+      const timeOffset = (ev.time - firstRecordedTime) - replayVirtualElapsed;
+      noteScreenX = playheadX + timeOffset * pxPerMs;
+    } else {
+      // Approximate live note positions based on time difference from last event
+      const timeDiff = (lastRecordedTime - ev.time);
+      noteScreenX = (SW - 60) - timeDiff * 0.16;
+    }
+
+    const noteScreenY = bottomLineY - ev.step * stepGap;
+    const dist = Math.hypot(clickX - noteScreenX, clickY - noteScreenY);
+    if (dist < minDistance) {
+      minDistance = dist;
+      clickedEventIndex = i;
+    }
+  }
+
+  if (clickedEventIndex !== -1) {
+    // Delete note
+    recordedEvents.splice(clickedEventIndex, 1);
+    updateButtons();
+    updateSheetLabel();
+    return;
+  }
+
+  // 2. Otherwise, click on staff to ADD a note
+  // Snap clickY to nearest staff step (-14 to +12)
+  const rawStep = Math.round((bottomLineY - clickY) / stepGap);
+  const clampedStep = Math.max(-14, Math.min(12, rawStep));
+
+  // Determine corresponding note frequency and MIDI
+  let noteName = 'C4', midi = 60, freq = 261.63, color = '#38bdf8';
+  // Map standard treble clef step to note
+  const stepToPitch = {
+    [-14]: { name: 'E2', midi: 40, freq: 82.41, color: '#e879f9' },
+    [-11]: { name: 'A2', midi: 45, freq: 110.0, color: '#c084fc' },
+    [-8]:  { name: 'D3', midi: 50, freq: 146.83, color: '#a78bfa' },
+    [-5]:  { name: 'G3', midi: 55, freq: 196.0, color: '#818cf8' },
+    [-3]:  { name: 'B3', midi: 59, freq: 246.94, color: '#60a5fa' },
+    [0]:   { name: 'E4', midi: 64, freq: 329.63, color: '#38bdf8' },
+    [2]:   { name: 'G4', midi: 67, freq: 392.0, color: '#38bdf8' },
+    [3]:   { name: 'A4', midi: 69, freq: 440.0, color: '#f43f5e' },
+    [5]:   { name: 'C5', midi: 72, freq: 523.25, color: '#f59e0b' },
+    [7]:   { name: 'E5', midi: 76, freq: 659.25, color: '#10b981' },
+    [9]:   { name: 'Hi-Hat', midi: 42, freq: 200, color: '#fbbf24', isDrum: true, symbol: 'x' }
+  };
+
+  // Find closest mapped pitch
+  let closestStep = Object.keys(stepToPitch).reduce((prev, curr) => 
+    Math.abs(curr - clampedStep) < Math.abs(prev - clampedStep) ? curr : prev
+  );
+
+  const def = stepToPitch[closestStep];
+  if (def.isDrum) {
+    audio.playDrum('hihat');
+  } else {
+    audio.pluck(def.freq, 0.9);
+  }
+
+  // Calculate timestamp based on click X position
+  let newTime;
+  if (isReplaying) {
+    const timeOffset = (clickX - playheadX) / pxPerMs;
+    newTime = firstRecordedTime + replayVirtualElapsed + timeOffset;
+  } else {
+    const timeOffsetFromRight = ((SW - 60) - clickX) / 0.16;
+    newTime = performance.now() - timeOffsetFromRight;
+  }
+
+  if (recordedEvents.length === 0) {
+    newTime = performance.now();
+  }
+
+  const newEvent = {
+    kind: def.isDrum ? 'drum' : 'string',
+    drumType: def.isDrum ? 'hihat' : undefined,
+    label: def.name,
+    midi: def.midi,
+    freq: def.freq,
+    step: parseInt(closestStep),
+    color: def.color,
+    isDrum: !!def.isDrum,
+    symbol: def.symbol || 'o',
+    velocity: 100,
+    time: Math.max(performance.now() - 60000, newTime),
+    playedInReplay: false,
+    highlight: 1.0
+  };
+
+  recordedEvents.push(newEvent);
+  recordedEvents.sort((a, b) => a.time - b.time);
+  firstRecordedTime = recordedEvents[0].time;
+  lastRecordedTime = recordedEvents[recordedEvents.length - 1].time;
+
+  updateButtons();
+  updateSheetLabel();
+});
+
+/**
+ * REPLAY, LOOP & SPEED ENGINE
+ */
+function resetReplayPass() {
+  replayVirtualElapsed = 0;
+  if (recordedEvents.length > 0) {
+    firstRecordedTime = recordedEvents[0].time;
+    lastRecordedTime = recordedEvents[recordedEvents.length - 1].time;
+  }
+  for (const ev of recordedEvents) {
+    ev.playedInReplay = false;
+  }
+}
+
+function startReplay() {
+  if (recordedEvents.length === 0) return;
+  audio.init();
+  isReplaying = true;
+  resetReplayPass();
+  for (const ev of recordedEvents) ev.highlight = 0;
+
+  replayBtn.textContent = '■ Stop Replay';
+  replayBtn.classList.add('playing');
+  updateSheetLabel();
+}
+
+function stopReplay() {
+  isReplaying = false;
+  updateSheetLabel();
+  updateButtons();
+}
+
+replayBtn.addEventListener('click', () => {
+  if (isReplaying) stopReplay();
+  else startReplay();
+});
+
+loopBtn.addEventListener('click', () => {
+  isLooping = !isLooping;
+  loopBtn.textContent = `↻ Loop: ${isLooping ? 'ON' : 'OFF'}`;
+  loopBtn.classList.toggle('active', isLooping);
+  updateSheetLabel();
+});
+
+speedSlider.addEventListener('input', (e) => {
+  playbackSpeed = parseFloat(e.target.value);
+  speedVal.textContent = `${playbackSpeed.toFixed(1)}x`;
+  updateSheetLabel();
+});
+
+/**
+ * POINTER & ORB INTERACTION ON STAGE
+ */
+let pointer = { x: 0, y: 0, px: 0, py: 0, down: false, draggedShape: null };
+let autoEmitter = true;
+
+function checkSegmentCross(x1, y1, x2, y2, sx1, sx2, sy) {
+  if ((y1 < sy && y2 >= sy) || (y1 > sy && y2 <= sy)) {
+    const t = (sy - y1) / (y2 - y1);
+    const ix = x1 + t * (x2 - x1);
+    if (ix >= sx1 && ix <= sx2) return ix;
+  }
+  return null;
+}
+
+function checkPassedShape(x1, y1, x2, y2, sh) {
+  const d1 = Math.hypot(x1 - sh.x, y1 - sh.y);
+  const d2 = Math.hypot(x2 - sh.x, y2 - sh.y);
+  return (d1 > sh.r + 22 && d2 <= sh.r + 22);
+}
+
+stageCanvas.addEventListener('pointerdown', (e) => {
+  const rect = stageCanvas.getBoundingClientRect();
+  pointer.x = pointer.px = e.clientX - rect.left;
+  pointer.y = pointer.py = e.clientY - rect.top;
+  pointer.down = true;
+
+  for (const d of drums) {
+    if (Math.hypot(pointer.x - d.x, pointer.y - d.y) <= d.r) {
+      triggerDrum(d);
+      return;
+    }
+  }
+
+  for (const sh of shapes) {
+    if (Math.hypot(pointer.x - sh.x, pointer.y - sh.y) <= sh.r + 6) {
+      pointer.draggedShape = sh;
+      triggerShape(sh);
+      return;
+    }
+  }
+
+  const angle = Math.random() * Math.PI * 2;
+  const speed = 4.5 + Math.random() * 2.5;
+  movers.push({
+    x: pointer.x, y: pointer.y, px: pointer.x, py: pointer.y,
+    vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: 5, life: 420
+  });
+});
+
+window.addEventListener('pointermove', (e) => {
+  const rect = stageCanvas.getBoundingClientRect();
+  pointer.px = pointer.x;
+  pointer.py = pointer.y;
+  pointer.x = e.clientX - rect.left;
+  pointer.y = e.clientY - rect.top;
+
+  if (pointer.down && pointer.draggedShape) {
+    pointer.draggedShape.x = pointer.x;
+    pointer.draggedShape.y = pointer.y;
+    return;
+  }
+
+  for (const s of guitarStrings) {
+    const ix = checkSegmentCross(pointer.px, pointer.py, pointer.x, pointer.y, s.x1, s.x2, s.y);
+    if (ix !== null) triggerString(s, ix);
+  }
+
+  for (const sh of shapes) {
+    if (checkPassedShape(pointer.px, pointer.py, pointer.x, pointer.y, sh)) {
+      triggerShape(sh);
+    }
+  }
+});
+
+window.addEventListener('pointerup', () => {
+  pointer.down = false;
+  pointer.draggedShape = null;
+});
+
+const emitterBtn = document.getElementById('emitter-btn');
+emitterBtn.addEventListener('click', () => {
+  autoEmitter = !autoEmitter;
+  emitterBtn.textContent = `Auto-Orbs: ${autoEmitter ? 'ON' : 'OFF'}`;
+  emitterBtn.classList.toggle('active', autoEmitter);
+});
+
+document.getElementById('add-shape-btn').addEventListener('click', () => {
+  const def = SHAPE_NOTES[shapes.length % SHAPE_NOTES.length];
+  shapes.push({
+    ...def,
+    x: W * (0.2 + Math.random() * 0.45),
+    y: H * (0.2 + Math.random() * 0.6),
+    r: 26, angle: 0, pulse: 1
+  });
+});
+
+exportMidiBtn.addEventListener('click', () => {
+  if (recordedEvents.length === 0) return;
+  const blob = buildMidiFile(recordedEvents, playbackSpeed);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `kinetic-score-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.mid`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('clear-btn').addEventListener('click', () => {
+  if (isReplaying) stopReplay();
+  sheetNotes = [];
+  recordedEvents = [];
+  updateButtons();
+  updateSheetLabel();
+});
+
+/**
+ * ANIMATION LOOP
+ */
+let lastSpawn = 0;
+
+function drawPolygon(ctx, x, y, r, sides, rotation) {
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const a = rotation + (i * 2 * Math.PI) / sides;
+    const px = x + Math.cos(a) * r;
+    const py = y + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function updateAndDrawStage(now, dt) {
+  ctx.clearRect(0, 0, W, H);
+
+  if (isReplaying && recordedEvents.length > 0) {
+    replayVirtualElapsed += dt * playbackSpeed;
+
+    for (const ev of recordedEvents) {
+      const targetOffset = ev.time - firstRecordedTime;
+      if (!ev.playedInReplay && replayVirtualElapsed >= targetOffset) {
+        ev.playedInReplay = true;
+        ev.highlight = 1.0;
+
+        if (ev.kind === 'string' || ev.kind === 'shape') {
+          audio.pluck(ev.freq, 0.95);
+        } else if (ev.kind === 'drum') {
+          audio.playDrum(ev.drumType || 'hihat');
+        }
+      }
+    }
+
+    const totalDuration = lastRecordedTime - firstRecordedTime;
+    if (replayVirtualElapsed > totalDuration + 900) {
+      if (isLooping) resetReplayPass();
+      else stopReplay();
+    }
+  }
+
+  if (!isReplaying && autoEmitter && now - lastSpawn > 1600 && movers.length < 6) {
+    lastSpawn = now;
+    movers.push({
+      x: W * 0.08, y: H * (0.2 + Math.random() * 0.6), px: W * 0.08, py: H * 0.5,
+      vx: 4.5 + Math.random() * 2, vy: (Math.random() - 0.5) * 4, r: 5, life: 520
+    });
+  }
+
+  for (const s of guitarStrings) {
+    s.amp *= 0.92;
+    const offset = Math.sin(now * 0.06) * s.amp;
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2 + Math.abs(s.amp) * 0.12;
+    ctx.beginPath();
+    ctx.moveTo(s.x1, s.y);
+    ctx.quadraticCurveTo((s.x1 + s.x2) / 2, s.y + offset, s.x2, s.y);
+    ctx.stroke();
+
+    ctx.fillStyle = s.color;
+    ctx.beginPath();
+    ctx.arc(s.x1, s.y, 4, 0, Math.PI * 2);
+    ctx.arc(s.x2, s.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(226, 232, 240, 0.45)';
+    ctx.font = '11px monospace';
+    ctx.fillText(s.name, s.x1 - 26, s.y + 4);
+  }
+
+  for (const sh of shapes) {
+    sh.angle += 0.008;
+    sh.pulse *= 0.9;
+    const currentR = sh.r + sh.pulse * 10;
+
+    ctx.strokeStyle = sh.color + '33';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(sh.x, sh.y, sh.r + 22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.save();
+    ctx.strokeStyle = sh.color;
+    ctx.fillStyle = sh.color + '22';
+    ctx.lineWidth = 2.5;
+    drawPolygon(ctx, sh.x, sh.y, currentR, sh.sides, sh.angle);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '600 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(sh.name, sh.x, sh.y);
+    ctx.restore();
+  }
+
+  for (const d of drums) {
+    d.scale += (1 - d.scale) * 0.18;
+    const r = d.r * d.scale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = d.color + '1c';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = d.color;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, r * 0.72, 0, Math.PI * 2);
+    ctx.strokeStyle = d.color + '44';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '600 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.name, d.x, d.y);
+    ctx.restore();
+  }
+
+  if (!isReplaying) {
+    for (let i = movers.length - 1; i >= 0; i--) {
+      const m = movers[i];
+      m.px = m.x; m.py = m.y;
+      m.x += m.vx; m.y += m.vy;
+      m.life--;
+
+      if (m.x < m.r || m.x > W - m.r) m.vx *= -1;
+      if (m.y < m.r || m.y > H - m.r) m.vy *= -1;
+
+      for (const sh of shapes) {
+        if (checkPassedShape(m.px, m.py, m.x, m.y, sh)) triggerShape(sh);
+      }
+      for (const s of guitarStrings) {
+        const ix = checkSegmentCross(m.px, m.py, m.x, m.y, s.x1, s.x2, s.y);
+        if (ix !== null) triggerString(s, ix);
+      }
+      for (const d of drums) {
+        const distPrev = Math.hypot(m.px - d.x, m.py - d.y);
+        const distCurr = Math.hypot(m.x - d.x, m.y - d.y);
+        if (distPrev > d.r && distCurr <= d.r) {
+          triggerDrum(d);
+          const nx = (m.x - d.x) / distCurr, ny = (m.y - d.y) / distCurr;
+          const dot = m.vx * nx + m.vy * ny;
+          m.vx = m.vx - 2 * dot * nx;
+          m.vy = m.vy - 2 * dot * ny;
+        }
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(m.px, m.py);
+      ctx.lineTo(m.x, m.y);
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+
+      if (m.life <= 0) movers.splice(i, 1);
+    }
+  }
+
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const rp = ripples[i];
+    rp.r += (rp.maxR - rp.r) * 0.12;
+    rp.alpha *= 0.92;
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, rp.r, 0, Math.PI * 2);
+    ctx.strokeStyle = rp.color;
+    ctx.globalAlpha = rp.alpha;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    if (rp.alpha < 0.03) ripples.splice(i, 1);
+  }
+}
+
+function drawStaffNote(n, nx, bottomLineY, stepGap) {
+  if (nx < 60 || nx > SW - 15) return;
+
+  const ny = bottomLineY - n.step * stepGap;
+  const hl = n.highlight || 0;
+
+  sctx.strokeStyle = hl > 0.1 ? '#fff' : 'rgba(255, 255, 255, 0.35)';
+  sctx.lineWidth = 1;
+  if (n.step <= -2) {
+    for (let st = -2; st >= n.step; st -= 2) {
+      const ly = bottomLineY - st * stepGap;
+      sctx.beginPath(); sctx.moveTo(nx - 10, ly); sctx.lineTo(nx + 10, ly); sctx.stroke();
+    }
+  } else if (n.step >= 10) {
+    for (let st = 10; st <= n.step; st += 2) {
+      const ly = bottomLineY - st * stepGap;
+      sctx.beginPath(); sctx.moveTo(nx - 10, ly); sctx.lineTo(nx + 10, ly); sctx.stroke();
+    }
+  }
+
+  if (hl > 0.05) {
+    sctx.save();
+    sctx.beginPath();
+    sctx.arc(nx, ny, 10 + hl * 12, 0, Math.PI * 2);
+    sctx.strokeStyle = n.color;
+    sctx.globalAlpha = hl * 0.85;
+    sctx.lineWidth = 2.5;
+    sctx.stroke();
+    sctx.restore();
+  }
+
+  sctx.save();
+  if (hl > 0.1) {
+    sctx.shadowColor = n.color;
+    sctx.shadowBlur = 16 * hl;
+  }
+
+  sctx.strokeStyle = hl > 0.4 ? '#ffffff' : n.color;
+  sctx.fillStyle = hl > 0.4 ? '#ffffff' : n.color;
+  sctx.lineWidth = 2;
+  const scale = 1 + hl * 0.35;
+
+  if (n.isDrum && n.symbol === 'x') {
+    const sz = 5 * scale;
+    sctx.beginPath();
+    sctx.moveTo(nx - sz, ny - sz); sctx.lineTo(nx + sz, ny + sz);
+    sctx.moveTo(nx + sz, ny - sz); sctx.lineTo(nx - sz, ny + sz);
+    sctx.stroke();
+  } else {
+    sctx.save();
+    sctx.translate(nx, ny);
+    sctx.rotate(-0.25);
+    sctx.beginPath();
+    sctx.ellipse(0, 0, 6.5 * scale, 4.8 * scale, 0, 0, Math.PI * 2);
+    sctx.fill();
+    sctx.restore();
+  }
+
+  sctx.beginPath();
+  if (n.step < 4) {
+    sctx.moveTo(nx + 5.5, ny); sctx.lineTo(nx + 5.5, ny - 28);
+  } else {
+    sctx.moveTo(nx - 5.5, ny); sctx.lineTo(nx - 5.5, ny + 28);
+  }
+  sctx.stroke();
+  sctx.restore();
+
+  sctx.fillStyle = hl > 0.2 ? '#ffffff' : 'rgba(226, 232, 240, 0.6)';
+  sctx.font = hl > 0.2 ? 'bold 11px monospace' : '10px monospace';
+  sctx.textAlign = 'center';
+  sctx.fillText(n.label, nx, SH - 12);
+}
+
+function updateAndDrawSheet() {
+  sctx.clearRect(0, 0, SW, SH);
+
+  const lineGap = 12;
+  const bottomLineY = SH * 0.68;
+  const stepGap = lineGap / 2;
+
+  sctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+  sctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    const y = bottomLineY - i * lineGap;
+    sctx.beginPath(); sctx.moveTo(20, y); sctx.lineTo(SW - 20, y); sctx.stroke();
+  }
+
+  sctx.fillStyle = 'rgba(226, 232, 240, 0.7)';
+  sctx.font = '48px serif';
+  sctx.fillText('𝄞', 28, bottomLineY - 8);
+
+  if (isReplaying) {
+    const playheadX = 160;
+    const pxPerMs = 0.16;
+
+    sctx.save();
+    sctx.strokeStyle = isLooping ? '#a855f7' : '#fbbf24';
+    sctx.lineWidth = 2;
+    sctx.setLineDash([4, 3]);
+    sctx.beginPath(); sctx.moveTo(playheadX, 24); sctx.lineTo(playheadX, SH - 24); sctx.stroke();
+    sctx.restore();
+
+    for (const ev of recordedEvents) {
+      ev.highlight = (ev.highlight || 0) * 0.9;
+      const timeOffset = (ev.time - firstRecordedTime) - replayVirtualElapsed;
+      const nx = playheadX + timeOffset * pxPerMs;
+      drawStaffNote(ev, nx, bottomLineY, stepGap);
+    }
+  } else {
+    for (let i = sheetNotes.length - 1; i >= 0; i--) {
+      const n = sheetNotes[i];
+      n.x -= 1.6;
+      n.highlight = (n.highlight || 0) * 0.92;
+      drawStaffNote(n, n.x, bottomLineY, stepGap);
+      if (n.x < 75) sheetNotes.splice(i, 1);
+    }
+  }
+}
+
+function loop(now) {
+  const dt = Math.min(64, now - lastFrameTime);
+  lastFrameTime = now;
+
+  updateAndDrawStage(now, dt);
+  updateAndDrawSheet();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
